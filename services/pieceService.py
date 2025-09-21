@@ -4,7 +4,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from random import choices
 from typing import Optional
 from models.piece import Piece,PieceUpdate, PieceModel
-
+from pymongo import ReturnDocument
 
 async def get_pieces(db):
     pieces_cursor = db["pieces"].find()
@@ -42,10 +42,10 @@ async def update_piece(code: str, piece_update: PieceUpdate, db: AsyncIOMotorDat
 
     # Actualizamos en la DB y devolvemos el documento actualizado
     result = await db["pieces"].find_one_and_update(
-        {"code": code},
-        {"$set": update_data},
-        return_document=True  # devuelve el documento después del update
-    )
+    {"code": code},
+    {"$set": update_data},
+    return_document=ReturnDocument.AFTER  # 👈 esto devuelve el doc ya actualizado
+)
 
     if result:
         # Convertimos ObjectId a string para Pydantic

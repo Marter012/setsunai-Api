@@ -35,20 +35,30 @@ async def modify_combined_piece(
     payload: CombinedPieceUpdate,
     db: AsyncIOMotorDatabase = Depends(get_db)
 ):
-    if payload.name:
-        existing = await db[COLLECTION_COMBINED].find_one({
-            "name": {"$regex": f"^{payload.name}$", "$options": "i"},
-            "code": {"$ne": code}  # excluye el mismo documento
-        })
-        if existing:
-            raise HTTPException(
-                status_code=400,
-                detail="Ya existe un combinado con ese nombre, elige otro."
-            )
     try:
-        updated = await update_combined_piece(code, payload, db)
-        if updated is None:
+        # 1️⃣ Validar existencia del código antes de cualquier cosa
+        combined = await db[COLLECTION_COMBINED].find_one({"code": code})
+        if not combined:
             raise HTTPException(status_code=404, detail="No se encontró el combinado de piezas.")
+
+        # 2️⃣ Validar duplicado de nombre si se envía un nuevo nombre
+        if payload.name:
+            existing = await db[COLLECTION_COMBINED].find_one({
+                "name": {"$regex": f"^{payload.name}$", "$options": "i"},
+                "code": {"$ne": code}  # excluye el mismo documento
+            })
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Ya existe un combinado con ese nombre, elige otro."
+                )
+
+        # 3️⃣ Hacer el update
+        updated = await update_combined_piece(code, payload, db)
         return {"message": "Combinado actualizado correctamente", "combinedPiece": updated}
+
+    except HTTPException:
+        # Relevantar excepciones que ya diste con raise
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en el servidor: {str(e)}")
