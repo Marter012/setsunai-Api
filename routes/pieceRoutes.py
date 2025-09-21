@@ -26,7 +26,7 @@ async def add_piece_route(piece: Piece, db: AsyncIOMotorDatabase = Depends(get_d
     new_piece = await add_piece(piece, db)
     return {"message": "Pieza agregada correctamente", "piece": new_piece}
 
-@router.put("/updatePieces{code}")
+@router.put("/updatePieces/{code}")
 async def modify_piece(code: str, piece: PieceUpdate, db: AsyncIOMotorDatabase = Depends(get_db)):
     # 1️⃣ Validar que el código exista
     existing_piece = await db[COLLECTION_PIECES].find_one({"code": code})
