@@ -14,7 +14,7 @@ async def list_combined_pieces(db: AsyncIOMotorDatabase = Depends(get_db)):
     combined = await get_combined_pieces(db)
     if not combined:
         raise HTTPException(status_code=404, detail="No se encontraron combinados de piezas.")
-    return {"combinedPieces": combined}
+    return combined
 
 @router.post("/addCombinedPieces")
 async def create_combined_piece(payload: CombinedPiece, db: AsyncIOMotorDatabase = Depends(get_db)):
