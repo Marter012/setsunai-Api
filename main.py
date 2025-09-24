@@ -19,7 +19,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",             # tu frontend en dev
-        "https://setsunai-frontend.onrender.com"  # frontend en producción
+        "https://setsunai-front.vercel.app/"  # frontend en producción
     ],
     allow_credentials=True,
     allow_methods=["*"],
