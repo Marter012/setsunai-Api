@@ -1,36 +1,35 @@
-Setsunai API Documentation
-Índice
+# Setsunai API Documentation
 
-Introducción
+## Índice
 
-Endpoints de Pieces
+1. [Introducción](#introducción)  
+2. [Endpoints de Pieces](#endpoints-de-pieces)  
+   - [GET /pieces](#get-pieces)  
+   - [POST /addPiece](#post-addpiece)  
+   - [PUT /pieces/{code}](#put-piecescode)  
+3. [Endpoints de CombinedPieces](#endpoints-de-combinedpieces)  
+   - [GET /combinedPieces](#get-combinedpieces)  
+   - [POST /addCombinedPiece](#post-addcombinedpiece)  
+   - [PUT /combinedPieces/{code}](#put-combinedpiecescode)  
 
-GET /pieces
+---
 
-POST /addPiece
+## Introducción
 
-PUT /pieces/{code}
+La API de **Setsunai** permite gestionar **piezas individuales** y **combinados de piezas**.  
+Está desarrollada con **FastAPI** y utiliza **MongoDB** como base de datos principal.
 
-Endpoints de CombinedPieces
+---
 
-GET /combinedPieces
+## Endpoints de Pieces
 
-POST /addCombinedPiece
-
-PUT /combinedPieces/{code}
-
-Introducción
-
-La API de Setsunai permite gestionar piezas individuales y combinados de piezas.
-Está desarrollada con FastAPI y utiliza MongoDB como base de datos principal.
-
-Endpoints de Pieces
-GET /pieces
+### GET `/pieces`
 
 Obtiene la lista de todas las piezas registradas.
 
-Respuesta:
+**Respuesta:**
 
+```json
 [
   {
     "_id": "64abc123...",
@@ -41,9 +40,8 @@ Respuesta:
     "state": true
   }
 ]
-
+```
 POST /addPiece
-
 Agrega una nueva pieza.
 
 Cuerpo de la solicitud:
@@ -53,8 +51,6 @@ Cuerpo de la solicitud:
   "description": "Descripción",
   "img": "URL de la imagen"
 }
-
-
 Respuestas:
 
 200 OK
@@ -63,12 +59,9 @@ Respuestas:
   "message": "Pieza agregada correctamente",
   "piece": { ... }
 }
-
-
 400 Bad Request → El nombre ya existe.
 
 PUT /pieces/{code}
-
 Actualiza una pieza existente mediante su código.
 
 Cuerpo de la solicitud:
@@ -79,8 +72,6 @@ Cuerpo de la solicitud:
   "img": "Nueva URL opcional",
   "state": true
 }
-
-
 Respuestas:
 
 200 OK
@@ -89,15 +80,12 @@ Respuestas:
   "message": "Pieza actualizada con éxito",
   "piece": { ... }
 }
-
-
 400 Bad Request → El nombre ya existe.
 
 404 Not Found → Código no encontrado.
 
 Endpoints de CombinedPieces
 GET /combinedPieces
-
 Obtiene todos los combinados de piezas.
 
 Respuesta:
@@ -112,9 +100,7 @@ Respuesta:
     "state": true
   }
 ]
-
 POST /addCombinedPiece
-
 Agrega un nuevo combinado de piezas.
 
 Cuerpo de la solicitud:
@@ -124,8 +110,6 @@ Cuerpo de la solicitud:
   "img": "URL de la imagen",
   "typePieces": "PC001,PC002"
 }
-
-
 Respuestas:
 
 200 OK
@@ -134,12 +118,9 @@ Respuestas:
   "message": "Combinado agregado correctamente",
   "combinedPiece": { ... }
 }
-
-
 400 Bad Request → El nombre ya existe.
 
 PUT /combinedPieces/{code}
-
 Actualiza un combinado existente mediante su código.
 
 Cuerpo de la solicitud:
@@ -150,8 +131,6 @@ Cuerpo de la solicitud:
   "typePieces": "PC001,PC002",
   "state": true
 }
-
-
 Respuestas:
 
 200 OK
@@ -160,8 +139,7 @@ Respuestas:
   "message": "Combinado actualizado correctamente",
   "combinedPiece": { ... }
 }
-
-
 400 Bad Request → El nombre ya existe.
 
 404 Not Found → Código no encontrado.
+
