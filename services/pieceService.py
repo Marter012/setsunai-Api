@@ -1,13 +1,16 @@
-from dataBase.DBConfing import get_db
-import  string
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from random import choices
 from typing import Optional
-from models.piece import Piece,PieceUpdate, PieceModel
-from pymongo import ReturnDocument
-from fastapi import HTTPException 
+from random import choices
+import string
 
-async def get_pieces(db):
+from models.piece import Piece, PieceUpdate, PieceModel
+from fastapi import HTTPException
+from pymongo import ReturnDocument
+
+def generate_code(length: int = 6) -> str:
+    return "".join(choices(string.ascii_uppercase + string.digits, k=length))
+
+async def get_pieces(db: AsyncIOMotorDatabase):
     pieces_cursor = db["pieces"].find()
     pieces_list = []
 
@@ -19,9 +22,6 @@ async def get_pieces(db):
         raise HTTPException(status_code=404, detail="No hay piezas disponibles")
     
     return pieces_list
-
-def generate_code(length: int = 6) -> str:
-    return "".join(choices(string.ascii_uppercase + string.digits, k=length))
 
 async def add_piece(piece: Piece, db: AsyncIOMotorDatabase):
     piece_dict = piece.model_dump()
@@ -38,10 +38,10 @@ async def update_piece(code: str, piece_update: PieceUpdate, db: AsyncIOMotorDat
         return None 
 
     result = await db["pieces"].find_one_and_update(
-    {"code": code},
-    {"$set": update_data},
-    return_document=ReturnDocument.AFTER 
-)
+        {"code": code},
+        {"$set": update_data},
+        return_document=ReturnDocument.AFTER
+    )
 
     if result:
         result["_id"] = str(result["_id"])
