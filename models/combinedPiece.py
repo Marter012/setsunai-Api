@@ -6,7 +6,9 @@ class CombinedPiece(BaseModel):
     name: str
     img: str
     typePieces: List[str]    # Lista de códigos de piezas
-    price: float             # Precio como número
+    proteins: List[str]    # Lista de códigos de proteínas
+    description: str
+    
 
 # Para devolver datos desde la DB
 class CombinedPieceModel(BaseModel):
@@ -15,7 +17,8 @@ class CombinedPieceModel(BaseModel):
     name: str
     img: str
     typePieces: List[str]
-    price: float
+    proteins: List[str]  
+    description: str
     state: bool = True
 
     class Config:
@@ -26,5 +29,6 @@ class CombinedPieceUpdate(BaseModel):
     name: Optional[str]
     img: Optional[str]
     typePieces: Optional[List[str]]
-    price: Optional[float]
+    proteins: Optional[List[str]]   
+    description: Optional[str]
     state: Optional[bool]

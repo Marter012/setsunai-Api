@@ -24,7 +24,8 @@ async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[CombinedPieceMod
             name=doc.get("name", ""),
             img=doc.get("img", ""),
             typePieces=doc.get("typePieces", ""),
-            price=doc.get("price", ""),
+            proteins=doc.get("proteins", ""),
+            description=doc.get("description", ""),
             state=doc.get("state", True),
             _id=doc.get("_id")
         ))
@@ -45,7 +46,9 @@ async def add_combined_piece(data: CombinedPiece, db: AsyncIOMotorDatabase) -> C
         name=doc.get("name", ""),
         img=doc.get("img", ""),
         typePieces=doc.get("typePieces", ""),
-        price=doc.get("price", ""),
+        proteins=doc.get("proteins", ""),
+            description=doc.get("description", ""),
+        
         state=doc.get("state", True),
         _id=doc.get("_id")
     )
@@ -66,7 +69,8 @@ async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncI
             name=existing.get("name", ""),
             img=existing.get("img", ""),
             typePieces=existing.get("typePieces", ""),
-            price=existing.get("price", ""),
+            proteins=existing.get("proteins", ""),
+            description=existing.get("description", ""),
             state=existing.get("state", True),
             _id=existing.get("_id")
         )
@@ -82,7 +86,8 @@ async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncI
         name=updated_doc.get("name", ""),
         img=updated_doc.get("img", ""),
         typePieces=updated_doc.get("typePieces", ""),
-        price=updated_doc.get("price", ""),
+        proteins=updated_doc.get("proteins", ""),
+        description=updated_doc.get("description", ""),
         state=updated_doc.get("state", True),
         _id=updated_doc.get("_id")
     )

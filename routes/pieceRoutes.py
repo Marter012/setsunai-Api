@@ -2,17 +2,19 @@ from fastapi import APIRouter, Depends, HTTPException
 from typing import List
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from models.piece import Piece, PieceUpdate
+from models.piece import Piece, PieceUpdate, PieceModel
 from services.pieceService import get_pieces, add_piece, update_piece
 from dataBase.DBConfing import get_db
 
 router = APIRouter()
 COLLECTION_PIECES = "pieces"
 
-@router.get("/pieces", response_model=List[Piece])
+
+@router.get("/pieces", response_model=List[PieceModel])
 async def get_all_pieces(db: AsyncIOMotorDatabase = Depends(get_db)):
     pieces = await get_pieces(db)
     return pieces
+
 
 @router.post("/addPiece")
 async def add_piece_route(piece: Piece, db: AsyncIOMotorDatabase = Depends(get_db)):
@@ -25,7 +27,8 @@ async def add_piece_route(piece: Piece, db: AsyncIOMotorDatabase = Depends(get_d
     new_piece = await add_piece(piece, db)
     return {"message": "Pieza agregada correctamente", "piece": new_piece}
 
-@router.put("/updatePieces/{code}")
+
+@router.put("/updatePiece/{code}")
 async def modify_piece(code: str, piece: PieceUpdate, db: AsyncIOMotorDatabase = Depends(get_db)):
     existing_piece = await db[COLLECTION_PIECES].find_one({"code": code})
     if not existing_piece:
