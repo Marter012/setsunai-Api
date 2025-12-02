@@ -12,27 +12,63 @@ def generate_code(length: int = 6) -> str:
     return "".join(choices(string.ascii_uppercase + string.digits, k=length))
 
 
-async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[CombinedPieceModel]:
-    """Obtiene todos los combinados de piezas"""
-    docs = await db[COLLECTION].find().to_list(length=100)
+# ---------------- GET TODOS LOS COMBOS CON PIEZAS Y PROTEÍNAS EXPANDIDAS ----------------
+async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[dict]:
+    """Obtiene todos los combinados con piecesData y proteinsData"""
+
+    pipeline = [
+        {
+            "$lookup": {
+                "from": "pieces",
+                "localField": "typePieces",
+                "foreignField": "code",
+                "as": "piecesData"
+            }
+        },
+        {
+            "$lookup": {
+                "from": "proteins",
+                "localField": "proteins",
+                "foreignField": "code",
+                "as": "proteinsData"
+            }
+        }
+    ]
+
+    docs = await db[COLLECTION].aggregate(pipeline).to_list(length=None)
     combined_list = []
 
     for doc in docs:
+        # Convertir _id del combo a string
         doc["_id"] = str(doc["_id"])
-        combined_list.append(CombinedPieceModel(
-            code=doc.get("code", ""),
-            name=doc.get("name", ""),
-            img=doc.get("img", ""),
-            typePieces=doc.get("typePieces", ""),
-            proteins=doc.get("proteins", ""),
-            description=doc.get("description", ""),
-            state=doc.get("state", True),
-            _id=doc.get("_id")
-        ))
+        
+        # Convertir _id dentro de piecesData
+        for piece in doc.get("piecesData", []):
+            if "_id" in piece:
+                piece["_id"] = str(piece["_id"])
+
+        # Convertir _id dentro de proteinsData
+        for prot in doc.get("proteinsData", []):
+            if "_id" in prot:
+                prot["_id"] = str(prot["_id"])
+
+        combined_list.append({
+            "_id": doc["_id"],
+            "code": doc.get("code", ""),
+            "name": doc.get("name", ""),
+            "img": doc.get("img", ""),
+            "typePieces": doc.get("typePieces", []),
+            "proteins": doc.get("proteins", []),
+            "description": doc.get("description", ""),
+            "state": doc.get("state", True),
+            "piecesData": doc.get("piecesData", []),
+            "proteinsData": doc.get("proteinsData", [])
+        })
 
     return combined_list
 
 
+# ---------------- AGREGAR NUEVO COMBO ----------------
 async def add_combined_piece(data: CombinedPiece, db: AsyncIOMotorDatabase) -> CombinedPieceModel:
     """Agrega un nuevo combinado de piezas"""
     doc = data.model_dump()
@@ -45,35 +81,30 @@ async def add_combined_piece(data: CombinedPiece, db: AsyncIOMotorDatabase) -> C
         code=doc.get("code", ""),
         name=doc.get("name", ""),
         img=doc.get("img", ""),
-        typePieces=doc.get("typePieces", ""),
-        proteins=doc.get("proteins", ""),
-            description=doc.get("description", ""),
-        
+        typePieces=doc.get("typePieces", []),
+        proteins=doc.get("proteins", []),
+        description=doc.get("description", ""),
         state=doc.get("state", True),
         _id=doc.get("_id")
     )
 
 
+# ---------------- ACTUALIZAR COMBO EXISTENTE ----------------
 async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncIOMotorDatabase) -> Optional[CombinedPieceModel]:
     """Actualiza un combinado existente por su código"""
     existing = await db[COLLECTION].find_one({"code": code})
     if not existing:
         return None
 
-    update_data = {k: v for k, v in data.model_dump(exclude_unset=True).items()}
+    update_data = data.model_dump(exclude_unset=True)
+
+    # ❌ Nunca permitir modificar estos campos manualmente
+    update_data.pop("piecesData", None)
+    update_data.pop("proteinsData", None)
+
     if not update_data:
-        # No hay cambios, devolvemos el existente
         existing["_id"] = str(existing["_id"])
-        return CombinedPieceModel(
-            code=existing.get("code", ""),
-            name=existing.get("name", ""),
-            img=existing.get("img", ""),
-            typePieces=existing.get("typePieces", ""),
-            proteins=existing.get("proteins", ""),
-            description=existing.get("description", ""),
-            state=existing.get("state", True),
-            _id=existing.get("_id")
-        )
+        return CombinedPieceModel(**existing)
 
     updated_doc = await db[COLLECTION].find_one_and_update(
         {"code": code},
@@ -81,13 +112,5 @@ async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncI
         return_document=ReturnDocument.AFTER
     )
     updated_doc["_id"] = str(updated_doc["_id"])
-    return CombinedPieceModel(
-        code=updated_doc.get("code", ""),
-        name=updated_doc.get("name", ""),
-        img=updated_doc.get("img", ""),
-        typePieces=updated_doc.get("typePieces", ""),
-        proteins=updated_doc.get("proteins", ""),
-        description=updated_doc.get("description", ""),
-        state=updated_doc.get("state", True),
-        _id=updated_doc.get("_id")
-    )
+
+    return CombinedPieceModel(**updated_doc)
