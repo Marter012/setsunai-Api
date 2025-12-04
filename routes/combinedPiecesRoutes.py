@@ -1,6 +1,10 @@
+# routes/combinedPieceRoutes.py
 from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
+from typing import List
+
 from services.combinedPiecesService import get_combined_pieces, add_combined_piece, update_combined_piece
+from services.comboVariantService import get_variants_by_combo
 from models.combinedPiece import CombinedPiece, CombinedPieceUpdate
 from dataBase.DBConfing import get_db
 
@@ -13,6 +17,13 @@ async def list_combined_pieces(db: AsyncIOMotorDatabase = Depends(get_db)):
     if not combined:
         raise HTTPException(status_code=404, detail="No se encontraron combinados de piezas.")
     return combined
+
+@router.get("/combinedPieces/variants/{comboCode}")
+async def list_combo_variants(comboCode: str, db: AsyncIOMotorDatabase = Depends(get_db)):
+    variants = await get_variants_by_combo(comboCode, db)
+    if variants is None:
+        raise HTTPException(status_code=404, detail="No se encontraron variantes para ese combinado.")
+    return variants
 
 @router.post("/addCombinedPieces")
 async def create_combined_piece(payload: CombinedPiece, db: AsyncIOMotorDatabase = Depends(get_db)):
@@ -46,4 +57,6 @@ async def modify_combined_piece(
             )
 
     updated = await update_combined_piece(code, payload, db)
+    if not updated:
+        raise HTTPException(status_code=404, detail="No se encontró el combinado a actualizar.")
     return {"message": "Combinado actualizado correctamente", "combinedPiece": updated}

@@ -74,14 +74,44 @@ async def update_piece(code: str, piece_update: PieceUpdate, db: AsyncIOMotorDat
         prices = generate_prices(cost)
         update_data.update(prices)
 
+    # --- UPDATE BASE DE LA PIEZA ---
     result = await db["pieces"].find_one_and_update(
         {"code": code},
         {"$set": update_data},
         return_document=ReturnDocument.AFTER
     )
 
-    if result:
-        result["_id"] = str(result["_id"])
-        return PieceModel(**result)
+    if not result:
+        return None
 
-    return None
+    # Convertir ID
+    result["_id"] = str(result["_id"])
+
+    # ---------- 🔥 REGENERAR VARIANTES AUTOMÁTICAMENTE ----------
+    from services.combinedPiecesService import generate_combo_variants
+    from services.comboVariantService import save_combo_variants, delete_variants_by_combo
+
+    # 1. Buscar combinados que usen esta pieza
+    combos_cursor = db["combinedPieces"].find({"typePieces": code})
+    combos = await combos_cursor.to_list(length=None)
+
+    for combo in combos:
+        combo_code = combo["code"]  # código del combinado
+
+        # 2. Cargar piezas actualizadas del combo
+        pieces_data = await db["pieces"].find(
+            {"code": {"$in": combo["typePieces"]}}
+        ).to_list(length=None)
+
+        # 3. Generar nuevas variantes basadas en precios nuevos
+        new_variants = generate_combo_variants(pieces_data)
+
+        # 4. Volar variantes viejas
+        await delete_variants_by_combo(combo_code, db)
+
+        # 5. Insertar variantes nuevas
+        await save_combo_variants(combo_code, new_variants, db)
+
+    # ---------- 🔥 FIN REGENERACIÓN AUTOMÁTICA ----------
+
+    return PieceModel(**result)
