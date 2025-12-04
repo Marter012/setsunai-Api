@@ -1,10 +1,11 @@
 # routes/combinedPieceRoutes.py
 from fastapi import APIRouter, Depends, HTTPException
 from motor.motor_asyncio import AsyncIOMotorDatabase
-from typing import List
+from typing import List,Dict
 
 from services.combinedPiecesService import get_combined_pieces, add_combined_piece, update_combined_piece
-from services.comboVariantService import get_variants_by_combo
+from services.comboVariantService import get_variants_by_combo, get_all_variants
+
 from models.combinedPiece import CombinedPiece, CombinedPieceUpdate
 from dataBase.DBConfing import get_db
 
@@ -24,6 +25,13 @@ async def list_combo_variants(comboCode: str, db: AsyncIOMotorDatabase = Depends
     if variants is None:
         raise HTTPException(status_code=404, detail="No se encontraron variantes para ese combinado.")
     return variants
+
+@router.get("/comboVariants", response_model=List[Dict])
+async def read_all_variants(db: AsyncIOMotorDatabase = Depends(get_db)):
+    """
+    Endpoint para traer todas las variantes de comboVariants
+    """
+    return await get_all_variants(db)
 
 @router.post("/addCombinedPieces")
 async def create_combined_piece(payload: CombinedPiece, db: AsyncIOMotorDatabase = Depends(get_db)):

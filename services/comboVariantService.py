@@ -43,6 +43,24 @@ async def get_variants_by_combo(combo_code: str, db: AsyncIOMotorDatabase) -> Li
             v["_id"] = str(v["_id"])
     return variants
 
+async def get_all_variants(db: AsyncIOMotorDatabase) -> List[Dict[str, Any]]:
+    """
+    Retorna todas las variantes de comboVariants.
+    """
+    cursor = db[COLLECTION].find({})
+    variants = await cursor.to_list(length=None)
+
+    if not variants:
+        return []  # o lanzar HTTPException si querés
+
+    # convertir _id a string por consistencia
+    for v in variants:
+        if "_id" in v:
+            v["_id"] = str(v["_id"])
+
+    return variants
+
+
 async def delete_variants_by_combo(combo_code: str, db: AsyncIOMotorDatabase) -> int:
     """Elimina todas las variantes asociadas a combo_code. Retorna count eliminados."""
     result = await db[COLLECTION].delete_many({"comboCode": combo_code})
