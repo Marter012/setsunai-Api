@@ -1,16 +1,23 @@
-# services/combinedPiecesService.py
 from typing import Optional, List, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
-
-from models.combinedPiece import CombinedPiece, CombinedPieceUpdate, CombinedPieceModel
-from services.comboVariantService import save_combo_variants, delete_variants_by_combo
 import string
 from random import choices
+import math
+
+from models.combinedPiece import (
+    CombinedPiece,
+    CombinedPieceUpdate,
+    CombinedPieceModel
+)
+
+from services.comboVariantService import (
+    save_combo_variants,
+    delete_variants_by_combo
+)
 
 COLLECTION = "combinedPieces"
 PIECES_COLLECTION = "pieces"
-COMBO_VARIANTS_COLLECTION = "comboVariants"  # referencia clara, aunque usamos servicio
 
 
 # ---------------- CODE GENERATOR ----------------
@@ -23,63 +30,106 @@ def generate_code(length: int = 6) -> str:
 COMBO_SCHEMAS = [
     {"take": 3, "perRoll": 4},
     {"take": 4, "perRoll": 4},
-    {"take": 5, "perRoll": 4},
     {"take": 4, "perRoll": 8},
-    {"take": 5, "perRoll": 8}
 ]
 
 
-# ---------------- GENERADOR DE VARIANTES ----------------
-def generate_combo_variants(pieces_data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+# ---------------- DISCOUNT RULES ----------------
+DISCOUNT_RULES = [
+    {"minPieces": 8,  "discount": 0.00},
+    {"minPieces": 16, "discount": 0.10},
+    {"minPieces": 24, "discount": 0.15},
+    {"minPieces": 30, "discount": 0.20},
+]
+
+
+# ---------------- PRICE HELPERS ----------------
+def round_up_to_100(value: float) -> int:
     """
-    Genera variantes a partir de COMBO_SCHEMAS.
-    Sólo crea una variante si existen al menos `take` piezas que tengan price_{perRoll}p.
+    Redondea al múltiplo de 200 inmediato superior.
     """
+    return int(math.ceil(value / 100) * 100)
+
+
+def get_discount_for_pieces(total_pieces: int) -> float:
+    """Devuelve el mayor descuento aplicable según cantidad de piezas"""
+    applied_discount = 0.0
+    for rule in DISCOUNT_RULES:
+        if total_pieces >= rule["minPieces"]:
+            applied_discount = rule["discount"]
+    return applied_discount
+
+
+def calculate_prices(base_price: float, discount: float) -> tuple[int, int]:
+    """
+    Calcula basePrice y finalPrice redondeados de 200 en 200.
+    """
+    rounded_base = round_up_to_100(base_price)
+    discounted_price = rounded_base * (1 - discount)
+    final_price = round_up_to_100(discounted_price)
+
+    return rounded_base, final_price
+
+
+# ---------------- VARIANT GENERATOR ----------------
+def generate_combo_variants(
+    pieces_data: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+
     variants = []
 
     for schema in COMBO_SCHEMAS:
-        take = schema.get("take")
-        per_roll = schema.get("perRoll")
-
-        if not isinstance(take, int) or not isinstance(per_roll, int):
-            continue
+        take = schema["take"]
+        per_roll = schema["perRoll"]
 
         price_key = f"price_{per_roll}p"
 
-        # piezas que pueden entrar en este esquema
-        pieces_with_price = [p for p in pieces_data if p.get(price_key) is not None]
+        pieces_with_price = [
+            p for p in pieces_data if p.get(price_key) is not None
+        ]
 
         if len(pieces_with_price) < take:
             continue
 
         selected = pieces_with_price[:take]
         pieces_list = []
-        total_price = 0
+        raw_base_price = 0
 
         for piece in selected:
             price = piece.get(price_key, 0)
+            raw_base_price += price
+
             pieces_list.append({
                 "pieceCode": piece.get("code"),
                 "pieceName": piece.get("name"),
-                "pieceCount": take,
+                "pieceCount": 1,
                 "price": price
             })
-            total_price += price
+
+        total_pieces = per_roll * len(selected)
+        discount = get_discount_for_pieces(total_pieces)
+
+        base_price, final_price = calculate_prices(
+            raw_base_price,
+            discount
+        )
 
         variants.append({
             "take": take,
             "perRoll": per_roll,
             "pieces": pieces_list,
-            "totalPieces": per_roll * len(selected),
-            "finalPrice": total_price
+            "totalPieces": total_pieces,
+            "basePrice": base_price,
+            "finalPrice": final_price,
+            "discounted": discount > 0,
+            "discountPercent": int(discount * 100)
         })
 
     return variants
 
 
-# ---------------- GET TODOS LOS COMBOS ----------------
+# ---------------- GET ALL COMBOS ----------------
 async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[dict]:
-    """Obtiene todos los combinados con piecesData expandido."""
     pipeline = [
         {
             "$lookup": {
@@ -92,62 +142,57 @@ async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[dict]:
     ]
 
     docs = await db[COLLECTION].aggregate(pipeline).to_list(length=None)
-    combined_list = []
+    result = []
 
     for doc in docs:
-        if "_id" in doc:
-            doc["_id"] = str(doc["_id"])
-
-        for piece in doc.get("piecesData", []):
-            if "_id" in piece:
-                piece["_id"] = str(piece["_id"])
-
+        doc["_id"] = str(doc["_id"])
         doc.pop("comboVariants", None)
 
-        combined_list.append(doc)
+        for piece in doc.get("piecesData", []):
+            piece["_id"] = str(piece["_id"])
 
-    return combined_list
+        result.append(doc)
+
+    return result
 
 
-# ---------------- AGREGAR NUEVO COMBO ----------------
-async def add_combined_piece(data: CombinedPiece, db: AsyncIOMotorDatabase) -> CombinedPieceModel:
-    """
-    Agrega un combinado (solo doc base) y genera sus variantes automáticamente 
-    guardándolas en la colección comboVariants.
-    """
+# ---------------- ADD COMBO ----------------
+async def add_combined_piece(
+    data: CombinedPiece,
+    db: AsyncIOMotorDatabase
+) -> CombinedPieceModel:
+
     doc = data.model_dump()
     doc["code"] = generate_code()
     doc["state"] = True
 
-    # obtener todas las piezas para generar variantes
     pieces_data = await db[PIECES_COLLECTION].find(
         {"code": {"$in": doc["typePieces"]}}
     ).to_list(length=None)
 
     variants = generate_combo_variants(pieces_data)
 
-    # guardar doc base
     result = await db[COLLECTION].insert_one(doc)
     doc["_id"] = str(result.inserted_id)
 
-    # guardar variantes
     await save_combo_variants(doc["code"], variants, db)
 
     return CombinedPieceModel(**doc)
 
 
-# ---------------- ACTUALIZAR COMBO ----------------
-async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncIOMotorDatabase) -> Optional[CombinedPieceModel]:
-    """
-    Actualiza un combinado por código y, si cambian typePieces, regenera variantes.
-    """
+# ---------------- UPDATE COMBO ----------------
+async def update_combined_piece(
+    code: str,
+    data: CombinedPieceUpdate,
+    db: AsyncIOMotorDatabase
+) -> Optional[CombinedPieceModel]:
+
     existing = await db[COLLECTION].find_one({"code": code})
     if not existing:
         return None
 
     update_data = data.model_dump(exclude_unset=True)
 
-    # si cambian las piezas, regeneramos variantes
     if "typePieces" in update_data:
         pieces_data = await db[PIECES_COLLECTION].find(
             {"code": {"$in": update_data["typePieces"]}}
@@ -164,9 +209,7 @@ async def update_combined_piece(code: str, data: CombinedPieceUpdate, db: AsyncI
         return_document=ReturnDocument.AFTER
     )
 
-    if updated_doc:
-        updated_doc["_id"] = str(updated_doc["_id"])
-        updated_doc.pop("comboVariants", None)
-        return CombinedPieceModel(**updated_doc)
+    updated_doc["_id"] = str(updated_doc["_id"])
+    updated_doc.pop("comboVariants", None)
 
-    return None
+    return CombinedPieceModel(**updated_doc)

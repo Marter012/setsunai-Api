@@ -13,7 +13,7 @@ class ComboVariantModel(BaseModel):
     comboCode: str
     take: int
     perRoll: int
-    pieces: List[Dict[str, Any]]  # puedes usar List[ComboVariantPiece] si querés tipado más fuerte
+    pieces: List[Dict[str, Any]] 
     totalPieces: int
     finalPrice: float
 
