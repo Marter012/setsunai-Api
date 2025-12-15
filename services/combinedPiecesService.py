@@ -27,11 +27,16 @@ def generate_code(length: int = 6) -> str:
 
 
 # ---------------- COMBO SCHEMAS ----------------
+ROLL_SIZES = [4, 8]
+TAKES = [3, 4, 5]
+
 COMBO_SCHEMAS = [
-    {"take": 3, "perRoll": 4},
-    {"take": 4, "perRoll": 4},
-    {"take": 4, "perRoll": 8},
+    {"take": t, "perRoll": r}
+    for r in ROLL_SIZES
+    for t in TAKES
+    if not (t == 3 and r == 8)  # si no querés 3x8
 ]
+
 
 
 # ---------------- DISCOUNT RULES ----------------
