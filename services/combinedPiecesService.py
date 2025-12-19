@@ -1,8 +1,11 @@
+# services/combinedPiecesService.py
 from typing import Optional, List, Dict, Any
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ReturnDocument
-import string
+from pymongo.errors import DuplicateKeyError
+from fastapi import HTTPException
 from random import choices
+import string
 import math
 
 from models.combinedPiece import (
@@ -20,13 +23,14 @@ COLLECTION = "combinedPieces"
 PIECES_COLLECTION = "pieces"
 
 
-# ---------------- CODE GENERATOR ----------------
+# -------------------------
+# Helpers
+# -------------------------
+
 def generate_code(length: int = 6) -> str:
-    """Genera un código aleatorio para un combinado"""
     return "".join(choices(string.ascii_uppercase + string.digits, k=length))
 
 
-# ---------------- COMBO SCHEMAS ----------------
 ROLL_SIZES = [4, 8]
 TAKES = [3, 4, 5]
 
@@ -34,12 +38,9 @@ COMBO_SCHEMAS = [
     {"take": t, "perRoll": r}
     for r in ROLL_SIZES
     for t in TAKES
-    if not (t == 3 and r == 8)  # si no querés 3x8
+    if not (t == 3 and r == 8)
 ]
 
-
-
-# ---------------- DISCOUNT RULES ----------------
 DISCOUNT_RULES = [
     {"minPieces": 8,  "discount": 0.00},
     {"minPieces": 16, "discount": 0.10},
@@ -48,35 +49,24 @@ DISCOUNT_RULES = [
 ]
 
 
-# ---------------- PRICE HELPERS ----------------
 def round_up_to_100(value: float) -> int:
-    """
-    Redondea al múltiplo de 200 inmediato superior.
-    """
     return int(math.ceil(value / 100) * 100)
 
 
 def get_discount_for_pieces(total_pieces: int) -> float:
-    """Devuelve el mayor descuento aplicable según cantidad de piezas"""
-    applied_discount = 0.0
+    discount = 0.0
     for rule in DISCOUNT_RULES:
         if total_pieces >= rule["minPieces"]:
-            applied_discount = rule["discount"]
-    return applied_discount
+            discount = rule["discount"]
+    return discount
 
 
 def calculate_prices(base_price: float, discount: float) -> tuple[int, int]:
-    """
-    Calcula basePrice y finalPrice redondeados de 200 en 200.
-    """
     rounded_base = round_up_to_100(base_price)
-    discounted_price = rounded_base * (1 - discount)
-    final_price = round_up_to_100(discounted_price)
-
+    final_price = round_up_to_100(rounded_base * (1 - discount))
     return rounded_base, final_price
 
 
-# ---------------- VARIANT GENERATOR ----------------
 def generate_combo_variants(
     pieces_data: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -86,38 +76,29 @@ def generate_combo_variants(
     for schema in COMBO_SCHEMAS:
         take = schema["take"]
         per_roll = schema["perRoll"]
-
         price_key = f"price_{per_roll}p"
 
-        pieces_with_price = [
-            p for p in pieces_data if p.get(price_key) is not None
-        ]
-
-        if len(pieces_with_price) < take:
+        available = [p for p in pieces_data if p.get(price_key) is not None]
+        if len(available) < take:
             continue
 
-        selected = pieces_with_price[:take]
+        selected = available[:take]
         pieces_list = []
-        raw_base_price = 0
+        raw_price = 0
 
         for piece in selected:
-            price = piece.get(price_key, 0)
-            raw_base_price += price
-
+            price = piece[price_key]
+            raw_price += price
             pieces_list.append({
-                "pieceCode": piece.get("code"),
-                "pieceName": piece.get("name"),
+                "pieceCode": piece["code"],
+                "pieceName": piece["name"],
                 "pieceCount": 1,
                 "price": price
             })
 
-        total_pieces = per_roll * len(selected)
+        total_pieces = per_roll * take
         discount = get_discount_for_pieces(total_pieces)
-
-        base_price, final_price = calculate_prices(
-            raw_base_price,
-            discount
-        )
+        base_price, final_price = calculate_prices(raw_price, discount)
 
         variants.append({
             "take": take,
@@ -133,88 +114,91 @@ def generate_combo_variants(
     return variants
 
 
-# ---------------- GET ALL COMBOS ----------------
-async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[dict]:
-    pipeline = [
-        {
-            "$lookup": {
-                "from": PIECES_COLLECTION,
-                "localField": "typePieces",
-                "foreignField": "code",
-                "as": "piecesData"
-            }
-        }
-    ]
+# -------------------------
+# CRUD
+# -------------------------
 
-    docs = await db[COLLECTION].aggregate(pipeline).to_list(length=None)
+async def get_combined_pieces(db: AsyncIOMotorDatabase) -> List[CombinedPieceModel]:
+    docs = await db[COLLECTION].find().to_list(length=None)
+
+    if not docs:
+        raise HTTPException(404, "No hay combinados disponibles")
+
     result = []
-
     for doc in docs:
         doc["_id"] = str(doc["_id"])
-        doc.pop("comboVariants", None)
-
-        for piece in doc.get("piecesData", []):
-            piece["_id"] = str(piece["_id"])
-
-        result.append(doc)
+        result.append(CombinedPieceModel(**doc))
 
     return result
 
 
-# ---------------- ADD COMBO ----------------
 async def add_combined_piece(
     data: CombinedPiece,
     db: AsyncIOMotorDatabase
 ) -> CombinedPieceModel:
 
     doc = data.model_dump()
-    doc["code"] = generate_code()
     doc["state"] = True
 
-    pieces_data = await db[PIECES_COLLECTION].find(
-        {"code": {"$in": doc["typePieces"]}}
-    ).to_list(length=None)
+    for _ in range(5):
+        doc["code"] = generate_code()
+        try:
+            pieces_data = await db[PIECES_COLLECTION].find(
+                {"code": {"$in": doc["typePieces"]}}
+            ).to_list(length=None)
 
-    variants = generate_combo_variants(pieces_data)
+            variants = generate_combo_variants(pieces_data)
 
-    result = await db[COLLECTION].insert_one(doc)
-    doc["_id"] = str(result.inserted_id)
+            result = await db[COLLECTION].insert_one(doc)
+            doc["_id"] = str(result.inserted_id)
 
-    await save_combo_variants(doc["code"], variants, db)
+            await save_combo_variants(doc["code"], variants, db)
 
-    return CombinedPieceModel(**doc)
+            return CombinedPieceModel(**doc)
+
+        except DuplicateKeyError:
+            continue
+
+    raise HTTPException(500, "No se pudo generar un código único")
 
 
-# ---------------- UPDATE COMBO ----------------
 async def update_combined_piece(
     code: str,
     data: CombinedPieceUpdate,
     db: AsyncIOMotorDatabase
 ) -> Optional[CombinedPieceModel]:
 
-    existing = await db[COLLECTION].find_one({"code": code})
-    if not existing:
+    update_data = data.model_dump(exclude_unset=True)
+
+    current = await db[COLLECTION].find_one({"code": code})
+    if not current:
         return None
 
-    update_data = data.model_dump(exclude_unset=True)
+    if "name" in update_data:
+        duplicate = await db[COLLECTION].find_one({
+            "name": {"$regex": f"^{update_data['name']}$", "$options": "i"},
+            "code": {"$ne": code}
+        })
+        if duplicate:
+            raise HTTPException(
+                400,
+                "Ya existe otro combinado con ese nombre"
+            )
 
     if "typePieces" in update_data:
         pieces_data = await db[PIECES_COLLECTION].find(
             {"code": {"$in": update_data["typePieces"]}}
         ).to_list(length=None)
 
-        new_variants = generate_combo_variants(pieces_data)
-
+        variants = generate_combo_variants(pieces_data)
         await delete_variants_by_combo(code, db)
-        await save_combo_variants(code, new_variants, db)
+        await save_combo_variants(code, variants, db)
 
-    updated_doc = await db[COLLECTION].find_one_and_update(
+    updated = await db[COLLECTION].find_one_and_update(
         {"code": code},
         {"$set": update_data},
         return_document=ReturnDocument.AFTER
     )
 
-    updated_doc["_id"] = str(updated_doc["_id"])
-    updated_doc.pop("comboVariants", None)
-
-    return CombinedPieceModel(**updated_doc)
+    updated["_id"] = str(updated["_id"])
+    return CombinedPieceModel(**updated)

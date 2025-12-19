@@ -13,9 +13,9 @@ client: Optional[AsyncIOMotorClient] = None
 db: Optional[AsyncIOMotorDatabase] = None
 
 async def connect_to_db() -> AsyncIOMotorDatabase:
-    """
-    Conecta a la base de datos y retorna la instancia de DB.
-    """
+    
+    # Conecta a la base de datos y retorna la instancia de DB.
+    
     global client, db
     if client is None:
         client = AsyncIOMotorClient(MONGO_URL)
@@ -24,10 +24,19 @@ async def connect_to_db() -> AsyncIOMotorDatabase:
     assert db is not None  # Pylance entiende que db no puede ser None aquí
     return db
 
+async def init_indexes():
+    if db is None:
+        raise RuntimeError("DB no inicializada")
+
+    await db["bonusProduct"].create_index(
+        "code",
+        unique=True
+    )
+
+    print("📌 Índice único creado en bonusProduct.code")
+
 async def close_db():
-    """
-    Cierra la conexión a MongoDB.
-    """
+    # Cierra la conexión a MongoDB.
     global client
     if client:
         client.close()
@@ -36,9 +45,7 @@ async def close_db():
 
 # Dependencia para FastAPI
 async def get_db() -> AsyncIOMotorDatabase:
-    """
-    Devuelve la base de datos, levantando un error si no está inicializada.
-    """
+    # Devuelve la base de datos, levantando un error si no está inicializada.
     if db is None:
         raise RuntimeError("DB no inicializada. Llama a connect_to_db primero.")
     return db

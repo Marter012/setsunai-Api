@@ -1,11 +1,15 @@
+# services/pieceService.py
 from motor.motor_asyncio import AsyncIOMotorDatabase
 from typing import Optional
 from random import choices
 import string
 import math
-from models.piece import Piece, PieceUpdate, PieceModel
-from fastapi import HTTPException
 from pymongo import ReturnDocument
+from fastapi import HTTPException
+
+from models.piece import Piece, PieceUpdate, PieceModel
+from services.combinedPiecesService import generate_combo_variants
+from services.comboVariantService import save_combo_variants, delete_variants_by_combo
 
 
 # -------------------------
@@ -16,18 +20,18 @@ def generate_code(length: int = 6) -> str:
     return "".join(choices(string.ascii_uppercase + string.digits, k=length))
 
 
-def round_500(value: float) -> int:
+def round_200(value: float) -> int:
     return int(math.ceil(value / 200) * 200)
 
 
 def generate_prices(cost: float) -> dict:
-    pieceUnit = cost / 8
+    unit = cost / 8
     return {
-        "price_3p": round_500((pieceUnit * 3) * 3.1),
-        "price_4p": round_500((pieceUnit * 4) * 3.1),
-        "price_5p": round_500((pieceUnit * 5) * 3.1),
-        "price_8p": round_500((pieceUnit * 8) * 3),
-        "price_16p": round_500((pieceUnit * 16) * 2.5),
+        "price_3p": round_200(unit * 3 * 3.1),
+        "price_4p": round_200(unit * 4 * 3.1),
+        "price_5p": round_200(unit * 5 * 3.1),
+        "price_8p": round_200(unit * 8 * 3),
+        "price_16p": round_200(unit * 16 * 2.5),
     }
 
 
@@ -36,45 +40,45 @@ def generate_prices(cost: float) -> dict:
 # -------------------------
 
 async def get_pieces(db: AsyncIOMotorDatabase):
-    pieces_cursor = db["pieces"].find()
-    pieces_list = []
+    pieces = await db["pieces"].find().to_list(length=None)
 
-    async for piece in pieces_cursor:
-        piece["_id"] = str(piece["_id"])
-        pieces_list.append(PieceModel(**piece))
+    if not pieces:
+        raise HTTPException(404, "No hay piezas disponibles")
 
-    if not pieces_list:
-        raise HTTPException(status_code=404, detail="No hay piezas disponibles")
-
-    return pieces_list
+    return [
+        PieceModel(**{**p, "_id": str(p["_id"])})
+        for p in pieces
+    ]
 
 
-async def add_piece(piece: Piece, db: AsyncIOMotorDatabase):
-    piece_dict = piece.model_dump()
+async def add_piece(piece: Piece, db: AsyncIOMotorDatabase) -> PieceModel:
+    doc = piece.model_dump()
+    doc.update(generate_prices(doc["costRoll"]))
+    doc["state"] = True
 
-    cost = piece_dict["costRoll"]
-    prices = generate_prices(cost)
+    for _ in range(5):
+        doc["code"] = generate_code()
+        try:
+            result = await db["pieces"].insert_one(doc)
+            doc["_id"] = str(result.inserted_id)
+            return PieceModel(**doc)
+        except Exception:
+            continue
 
-    piece_dict.update(prices)
-    piece_dict["code"] = generate_code()
-    piece_dict["state"] = True
-
-    result = await db["pieces"].insert_one(piece_dict)
-    piece_dict["_id"] = str(result.inserted_id)
-
-    return PieceModel(**piece_dict)
+    raise HTTPException(500, "No se pudo generar un código único")
 
 
-async def update_piece(code: str, piece_update: PieceUpdate, db: AsyncIOMotorDatabase) -> Optional[PieceModel]:
-    update_data = piece_update.model_dump(exclude_defaults=True)
+async def update_piece(
+    code: str,
+    piece_update: PieceUpdate,
+    db: AsyncIOMotorDatabase
+) -> Optional[PieceModel]:
 
-    # Si cambia el costo, recalculamos todos los precios
+    update_data = piece_update.model_dump(exclude_unset=True)
+
     if "costRoll" in update_data:
-        cost = update_data["costRoll"]
-        prices = generate_prices(cost)
-        update_data.update(prices)
+        update_data.update(generate_prices(update_data["costRoll"]))
 
-    # --- UPDATE BASE DE LA PIEZA ---
     result = await db["pieces"].find_one_and_update(
         {"code": code},
         {"$set": update_data},
@@ -84,34 +88,19 @@ async def update_piece(code: str, piece_update: PieceUpdate, db: AsyncIOMotorDat
     if not result:
         return None
 
-    # Convertir ID
     result["_id"] = str(result["_id"])
 
-    # ---------- 🔥 REGENERAR VARIANTES AUTOMÁTICAMENTE ----------
-    from services.combinedPiecesService import generate_combo_variants
-    from services.comboVariantService import save_combo_variants, delete_variants_by_combo
-
-    # 1. Buscar combinados que usen esta pieza
-    combos_cursor = db["combinedPieces"].find({"typePieces": code})
-    combos = await combos_cursor.to_list(length=None)
+    combos = await db["combinedPieces"].find(
+        {"typePieces": code}
+    ).to_list(length=None)
 
     for combo in combos:
-        combo_code = combo["code"]  # código del combinado
-
-        # 2. Cargar piezas actualizadas del combo
         pieces_data = await db["pieces"].find(
             {"code": {"$in": combo["typePieces"]}}
         ).to_list(length=None)
 
-        # 3. Generar nuevas variantes basadas en precios nuevos
-        new_variants = generate_combo_variants(pieces_data)
-
-        # 4. Volar variantes viejas
-        await delete_variants_by_combo(combo_code, db)
-
-        # 5. Insertar variantes nuevas
-        await save_combo_variants(combo_code, new_variants, db)
-
-    # ---------- 🔥 FIN REGENERACIÓN AUTOMÁTICA ----------
+        variants = generate_combo_variants(pieces_data)
+        await delete_variants_by_combo(combo["code"], db)
+        await save_combo_variants(combo["code"], variants, db)
 
     return PieceModel(**result)
