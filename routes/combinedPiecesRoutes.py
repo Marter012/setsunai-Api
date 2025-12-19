@@ -10,6 +10,7 @@ from services.combinedPiecesService import (
 )
 from services.comboVariantService import (
     get_variants_by_combo,
+    get_all_variants
 )
 
 from models.combinedPiece import (
@@ -61,6 +62,17 @@ async def list_combo_variants(
         )
 
     return variants
+
+
+# 🔹 GET – todas las variantes
+@router.get(
+    "/comboVariants",
+    response_model=List[Dict]
+)
+async def read_all_variants(
+    db: AsyncIOMotorDatabase = Depends(get_db)
+):
+    return await get_all_variants(db)
 
 
 # 🔹 POST – crear combinado

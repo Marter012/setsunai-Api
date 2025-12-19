@@ -42,6 +42,16 @@ async def get_variants_by_combo(
 
     return variants
 
+async def get_all_variants(
+    db: AsyncIOMotorDatabase
+) -> List[Dict[str, Any]]:
+    variants = await db[COLLECTION].find().to_list(length=None)
+
+    if not variants:
+        return []
+
+    return variants
+
 async def delete_variants_by_combo(
     combo_code: str,
     db: AsyncIOMotorDatabase
